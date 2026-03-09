@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  bot-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ../fixtures:/app/fixtures          # Persist generated fixtures
+      - ../reports:/app/reports            # Output reports to host
+    environment:
+      # HireLogic
+      - HIRELOGIC_API_URL=${HIRELOGIC_API_URL}
+      - HIRELOGIC_API_KEY=${HIRELOGIC_API_KEY}
+      # Zoom
+      - ZOOM_ACCOUNT_ID=${ZOOM_ACCOUNT_ID}
+      - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
+      - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
+      - ZOOM_HOST_EMAIL=${ZOOM_HOST_EMAIL}
+      # Google Meet
+      - GOOGLE_SERVICE_ACCOUNT_JSON=/run/secrets/google_sa
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID}
+      # Teams
+      - TEAMS_TENANT_ID=${TEAMS_TENANT_ID}
+      - TEAMS_CLIENT_ID=${TEAMS_CLIENT_ID}
+      - TEAMS_CLIENT_SECRET=${TEAMS_CLIENT_SECRET}
+      - TEAMS_USER_ID=${TEAMS_USER_ID}
+      # Test settings
+      - BROWSER_HEADLESS=true
+      - SLA_BOT_JOIN_SECONDS=45
+      - SLA_TRANSCRIPT_SECONDS=300
+    secrets:
+      - google_sa
+    # Required for PulseAudio virtual mic
+    devices:
+      - /dev/snd:/dev/snd
+    # Run all tests, generate HTML report
+    command: >
+      pytest tests/ -v --tb=short
+      --html=/app/reports/results.html
+      --self-contained-html
+
+  # Run only a specific platform
+  bot-tests-zoom:
+    extends: bot-tests
+    command: pytest tests/test_zoom.py -v --tb=short
+
+  bot-tests-meet:
+    extends: bot-tests
+    command: pytest tests/test_meet.py -v --tb=short
+
+  bot-tests-teams:
+    extends: bot-tests
+    command: pytest tests/test_teams.py -v --tb=short
+
+  # Edge cases only
+  bot-tests-edge:
+    extends: bot-tests
+    command: pytest tests/test_edge_cases.py -v --tb=short -m edge_case
+
+secrets:
+  google_sa:
+    file: ../config/google-service-account.json

@@ -1,0 +1,1 @@
+# hirelogic-bot-tests package

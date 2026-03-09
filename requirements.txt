@@ -1,0 +1,27 @@
+# Core test framework
+pytest==8.3.3
+pytest-html==4.1.1
+pytest-timeout==2.3.1
+
+# HTTP clients
+requests==2.32.3
+
+# Browser automation (synthetic meeting host)
+playwright==1.47.0
+
+# Audio processing
+pydub==0.25.1
+gTTS==2.5.3          # TTS for fixture generation
+
+# Google APIs
+google-auth==2.35.0
+google-api-python-client==2.149.0
+
+# Microsoft Graph (Teams)
+# msal==1.31.0        # Uncomment if using MSAL for auth
+
+# Transcript accuracy
+jiwer==3.0.4          # Word Error Rate calculation (optional — we have our own impl)
+
+# Utilities
+python-dotenv==1.0.1  # Load .env files in local dev
