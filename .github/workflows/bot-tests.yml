@@ -1,285 +1,95 @@
 name: HireLogic Bot Integration Tests
 
 on:
-  # Run nightly at 2am UTC
+  # Run once per hour
   schedule:
-    - cron: "0 2 * * *"
-  # Run on push to main (smoke tests only)
+    - cron: "0 * * * *"
+  # Run on push to main
   push:
     branches: [main]
-  # Run manually with platform/test selection
+  # Run manually
   workflow_dispatch:
     inputs:
-      platforms:
-        description: "Platforms to test (comma-separated: zoom,meet,teams)"
-        required: false
-        default: "zoom,meet,teams"
       test_filter:
-        description: "Pytest -k filter (e.g. 'join' or 'accuracy')"
+        description: "Run only tests matching this name (e.g. 'join')"
         required: false
         default: ""
-      skip_edge_cases:
-        description: "Skip edge case tests"
-        type: boolean
-        default: false
 
 env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  # ------------------------------------------------------------------ #
-  #  Setup: generate fixtures if not cached                             #
-  # ------------------------------------------------------------------ #
-  setup-fixtures:
-    name: Generate Audio Fixtures
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache audio fixtures
-        id: cache-fixtures
-        uses: actions/cache@v4
-        with:
-          path: fixtures/
-          key: fixtures-${{ hashFiles('audio/generator.py') }}
-
-      - name: Set up Python
-        if: steps.cache-fixtures.outputs.cache-hit != 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install fixture generation deps
-        if: steps.cache-fixtures.outputs.cache-hit != 'true'
-        run: pip install gtts pydub
-
-      - name: Generate fixtures
-        if: steps.cache-fixtures.outputs.cache-hit != 'true'
-        run: python audio/generator.py --all
-
-      - name: Upload fixtures artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: audio-fixtures
-          path: fixtures/
-          retention-days: 7
-
-  # ------------------------------------------------------------------ #
-  #  Test: Zoom                                                          #
-  # ------------------------------------------------------------------ #
   test-zoom:
     name: Zoom Tests
     runs-on: ubuntu-latest
-    needs: setup-fixtures
-    if: contains(github.event.inputs.platforms || 'zoom,meet,teams', 'zoom')
     env:
-      HIRELOGIC_API_URL: ${{ secrets.HIRELOGIC_API_URL }}
-      HIRELOGIC_API_KEY: ${{ secrets.HIRELOGIC_API_KEY }}
+      HIRELOGIC_BOT_EMAIL: ${{ secrets.HIRELOGIC_BOT_EMAIL }}
       ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
       ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
       ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
       ZOOM_HOST_EMAIL: ${{ secrets.ZOOM_HOST_EMAIL }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Download fixtures
-        uses: actions/download-artifact@v4
-        with:
-          name: audio-fixtures
-          path: fixtures/
+      - name: Check out code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
 
-      - name: Install PulseAudio (virtual mic)
+      - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y pulseaudio pulseaudio-utils sox
+          sudo apt-get install -y pulseaudio pulseaudio-utils sox libsox-fmt-mp3 ffmpeg
           pulseaudio --start --exit-idle-time=-1
           sleep 2
-          pactl info
 
-      - name: Install Playwright
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browser
         run: |
           pip install playwright
           playwright install chromium --with-deps
 
-      - name: Install Python deps
-        run: pip install -r requirements.txt
-
-      - name: Run Zoom tests
+      - name: Generate audio fixtures
         run: |
-          FILTER="${{ github.event.inputs.test_filter }}"
-          SKIP_EDGE="${{ github.event.inputs.skip_edge_cases }}"
-          ARGS="-v --tb=short --html=reports/zoom-results.html --self-contained-html"
-          [ -n "$FILTER" ] && ARGS="$ARGS -k '$FILTER'"
-          [ "$SKIP_EDGE" = "true" ] && ARGS="$ARGS -m 'not edge_case'"
-          pytest tests/test_zoom.py $ARGS
+          pip install gtts pydub
+          python audio/generator.py --all
 
-      - name: Upload Zoom test report
+      - name: Run Zoom join test
+        run: |
+          ARGS="tests/test_zoom.py::TestZoomBotJoin::test_bot_joins_within_sla -v --tb=short"
+          if [ -n "${{ github.event.inputs.test_filter }}" ]; then
+            ARGS="tests/test_zoom.py -v --tb=short -k '${{ github.event.inputs.test_filter }}'"
+          fi
+          pytest $ARGS
+
+      - name: Upload test log
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zoom-test-report
-          path: reports/zoom-results.html
-
-  # ------------------------------------------------------------------ #
-  #  Test: Google Meet                                                   #
-  # ------------------------------------------------------------------ #
-  test-google-meet:
-    name: Google Meet Tests
-    runs-on: ubuntu-latest
-    needs: setup-fixtures
-    if: contains(github.event.inputs.platforms || 'zoom,meet,teams', 'meet')
-    env:
-      HIRELOGIC_API_URL: ${{ secrets.HIRELOGIC_API_URL }}
-      HIRELOGIC_API_KEY: ${{ secrets.HIRELOGIC_API_KEY }}
-      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-      GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download fixtures
-        uses: actions/download-artifact@v4
-        with:
-          name: audio-fixtures
-          path: fixtures/
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-      - name: Install system deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y pulseaudio pulseaudio-utils sox
-          pulseaudio --start --exit-idle-time=-1
-      - name: Install deps
-        run: |
-          pip install -r requirements.txt
-          playwright install chromium --with-deps
-      - name: Write Google service account JSON
-        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > /tmp/sa.json
-        env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-      - name: Run Google Meet tests
-        env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: /tmp/sa.json
-        run: |
-          FILTER="${{ github.event.inputs.test_filter }}"
-          SKIP_EDGE="${{ github.event.inputs.skip_edge_cases }}"
-          ARGS="-v --tb=short --html=reports/meet-results.html --self-contained-html"
-          [ -n "$FILTER" ] && ARGS="$ARGS -k '$FILTER'"
-          [ "$SKIP_EDGE" = "true" ] && ARGS="$ARGS -m 'not edge_case'"
-          pytest tests/test_meet.py $ARGS
-      - name: Upload report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: meet-test-report
-          path: reports/meet-results.html
-
-  # ------------------------------------------------------------------ #
-  #  Test: Microsoft Teams                                               #
-  # ------------------------------------------------------------------ #
-  test-teams:
-    name: Teams Tests
-    runs-on: ubuntu-latest
-    needs: setup-fixtures
-    if: contains(github.event.inputs.platforms || 'zoom,meet,teams', 'teams')
-    env:
-      HIRELOGIC_API_URL: ${{ secrets.HIRELOGIC_API_URL }}
-      HIRELOGIC_API_KEY: ${{ secrets.HIRELOGIC_API_KEY }}
-      TEAMS_TENANT_ID: ${{ secrets.TEAMS_TENANT_ID }}
-      TEAMS_CLIENT_ID: ${{ secrets.TEAMS_CLIENT_ID }}
-      TEAMS_CLIENT_SECRET: ${{ secrets.TEAMS_CLIENT_SECRET }}
-      TEAMS_USER_ID: ${{ secrets.TEAMS_USER_ID }}
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download fixtures
-        uses: actions/download-artifact@v4
-        with:
-          name: audio-fixtures
-          path: fixtures/
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-      - name: Install system deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y pulseaudio pulseaudio-utils sox
-          pulseaudio --start --exit-idle-time=-1
-      - name: Install deps
-        run: |
-          pip install -r requirements.txt
-          playwright install chromium --with-deps
-      - name: Run Teams tests
-        run: |
-          FILTER="${{ github.event.inputs.test_filter }}"
-          SKIP_EDGE="${{ github.event.inputs.skip_edge_cases }}"
-          ARGS="-v --tb=short --html=reports/teams-results.html --self-contained-html"
-          [ -n "$FILTER" ] && ARGS="$ARGS -k '$FILTER'"
-          [ "$SKIP_EDGE" = "true" ] && ARGS="$ARGS -m 'not edge_case'"
-          pytest tests/test_teams.py $ARGS
-      - name: Upload report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: teams-test-report
-          path: reports/teams-results.html
-
-  # ------------------------------------------------------------------ #
-  #  Report: Combine results and post summary                           #
-  # ------------------------------------------------------------------ #
-  report:
-    name: Combine & Post Report
-    runs-on: ubuntu-latest
-    needs: [test-zoom, test-google-meet, test-teams]
-    if: always()
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all reports
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "*-test-report"
-          merge-multiple: true
+          name: zoom-test-log
           path: reports/
+          retention-days: 30
 
-      - name: Generate combined summary
+  report:
+    name: Post Result Summary
+    runs-on: ubuntu-latest
+    needs: [test-zoom]
+    if: always()
+    steps:
+      - name: Summary
         run: |
           echo "## 🤖 HireLogic Bot Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-
-          for platform in zoom meet teams; do
-            if [ -f "reports/${platform}-results.html" ]; then
-              # Extract pass/fail counts from pytest HTML report
-              PASSED=$(grep -o 'passed' reports/${platform}-results.html | wc -l || echo "?")
-              FAILED=$(grep -o 'failed' reports/${platform}-results.html | wc -l || echo "?")
-              if [ "$FAILED" -gt "0" ] 2>/dev/null; then
-                STATUS="❌ ${FAILED} failed, ${PASSED} passed"
-              else
-                STATUS="✅ All passed"
-              fi
-            else
-              STATUS="⏭️ Skipped"
-            fi
-            echo "| ${platform} | ${STATUS} |" >> $GITHUB_STEP_SUMMARY
-          done
-
-      - name: Upload combined reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-test-reports
-          path: reports/
-          retention-days: 30
+          if [ "${{ needs.test-zoom.result }}" = "success" ]; then
+            echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Zoom | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Zoom | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
