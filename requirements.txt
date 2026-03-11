@@ -16,6 +16,7 @@ gTTS==2.5.3          # TTS for fixture generation
 # Google APIs
 google-auth==2.35.0
 google-api-python-client==2.149.0
+cryptography==42.0.5
 
 # Microsoft Graph (Teams)
 # msal==1.31.0        # Uncomment if using MSAL for auth
