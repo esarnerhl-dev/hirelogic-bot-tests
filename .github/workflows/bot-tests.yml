@@ -28,6 +28,7 @@ jobs:
       ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
       ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
       ZOOM_HOST_EMAIL: ${{ secrets.ZOOM_HOST_EMAIL }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
 
     steps:
       - name: Check out code
