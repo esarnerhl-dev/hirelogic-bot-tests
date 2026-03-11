@@ -28,7 +28,7 @@ class TestZoomBotJoin:
         platform, meeting = zoom_meeting
 
         # Trigger the bot
-        job = bot_trigger.send_bot(meeting, extra_metadata={"test": "test_bot_joins_within_sla"})
+        job = bot_trigger.send_bot(meeting)
 
         # Wait for join
         obs = bot_observer.wait_for_join(
@@ -49,14 +49,14 @@ class TestZoomBotJoin:
         """
         platform, meeting = zoom_meeting
 
-        job1 = bot_trigger.send_bot(meeting, extra_metadata={"attempt": 1})
+        job1 = bot_trigger.send_bot(meeting)
         obs = bot_observer.wait_for_join(job1, platform=platform)
 
         assert obs.joined, "First bot trigger did not result in join"
 
         # Second trigger — should not crash the system
         try:
-            job2 = bot_trigger.send_bot(meeting, extra_metadata={"attempt": 2})
+            job2 = bot_trigger.send_bot(meeting)
             assert job2.job_id, "Second trigger returned no job_id"
         except Exception as e:
             pytest.fail(f"Second bot trigger raised an exception: {e}")
@@ -183,7 +183,7 @@ class TestZoomEdgeCases:
         time.sleep(30)  # Wait 30s before sending bot (shortened from 2min for CI speed)
 
         # Now trigger the bot
-        job = bot_trigger.send_bot(meeting, extra_metadata={"scenario": "late_join"})
+        job = bot_trigger.send_bot(meeting)
         obs = bot_observer.wait_for_join(job, platform=platform)
         assert join_checker.check(obs).passed, "Bot did not join (late join scenario)"
 
