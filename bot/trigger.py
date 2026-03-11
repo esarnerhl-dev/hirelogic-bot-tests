@@ -82,17 +82,26 @@ class BotTrigger:
         """
         import time
 
-        # Add the bot as an invitee on the meeting
-        # Zoom API: PATCH /meetings/{meetingId} to update registrants/invitees
-        # We use the meeting invite approach: add to meeting's invitee list
+        # First enable registration on the meeting, then add the bot as a registrant.
+        # This works on free Zoom accounts unlike invite_links which is paid-only.
+        # Step 1: Update meeting to require registration (type 1 = register to attend)
+        patch_resp = requests.patch(
+            f"{self.zoom_cfg.api_base}/meetings/{meeting.meeting_id}",
+            headers=self._zoom_headers(),
+            json={"registration_type": 1},
+            timeout=20,
+        )
+        # 204 = success, ignore other errors as meeting may already allow registration
+        logger.debug(f"[BotTrigger] Meeting patch status: {patch_resp.status_code}")
+
+        # Step 2: Add the bot email as a registrant
         resp = requests.post(
-            f"{self.zoom_cfg.api_base}/meetings/{meeting.meeting_id}/invite_links",
+            f"{self.zoom_cfg.api_base}/meetings/{meeting.meeting_id}/registrants",
             headers=self._zoom_headers(),
             json={
-                "attendees": [
-                    {"name": "HireLogic Notetaker", "email": self.bot_email}
-                ],
-                "ttl": 7200,  # Link valid for 2 hours
+                "email": self.bot_email,
+                "first_name": "HireLogic",
+                "last_name": "Notetaker",
             },
             timeout=20,
         )
