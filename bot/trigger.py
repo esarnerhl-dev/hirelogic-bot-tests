@@ -1,20 +1,19 @@
 """
 bot/trigger.py
-Triggers the HireLogic notetaker bot by inviting its dedicated email address
-to the Zoom meeting via the Zoom API.
+Triggers the HireLogic notetaker bot by:
+1. Logging into a personal Outlook.com account via browser automation
+2. Creating a calendar event with the recurring Zoom URL in the location field
+3. Inviting the HireLogic bot email as an attendee
 
-No HireLogic API calls needed — the bot monitors its inbox and joins
-automatically when invited from a recognized email address.
+No API keys or admin consent required — works just like a human would.
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
-import requests
-
 from config.settings import config
-from platforms.base import MeetingInfo
 
 logger = logging.getLogger(__name__)
 
@@ -25,110 +24,143 @@ class BotJobResult:
     platform: str
     meeting_id: str
     join_url: str
-    bot_email: str            # The HireLogic bot email that was invited
-    invited_at: float         # Unix timestamp of when invite was sent
-    status: str = "invited"   # "invited" | "joined" | "completed" | "failed"
+    bot_email: str
+    invited_at: float
+    calendar_event_id: Optional[str] = None
+    status: str = "invited"
 
 
 class BotTrigger:
     """
-    Invites the HireLogic notetaker bot to a Zoom meeting by adding its
-    dedicated email address as a meeting invitee via the Zoom API.
-
-    The bot joins automatically when it receives an invite from a
-    recognized (whitelisted) email address — in this case ZOOM_HOST_EMAIL.
+    Triggers the HireLogic notetaker bot by creating an Outlook calendar
+    event via browser automation (Playwright).
     """
 
     def __init__(self):
-        self.zoom_cfg = config.zoom
         self.bot_email = config.hirelogic.bot_email
-        self._token: Optional[str] = None
-        self._token_expiry: float = 0
+        self.outlook_email = config.outlook.email
+        self.outlook_password = config.outlook.password
+        self.zoom_url = config.zoom.recurring_meeting_url
 
-    def _get_zoom_token(self) -> str:
-        """Get a fresh Zoom OAuth token (reuses cached token if still valid)."""
-        import time
-        if self._token and time.time() < self._token_expiry - 60:
-            return self._token
-
-        resp = requests.post(
-            "https://zoom.us/oauth/token",
-            params={
-                "grant_type": "account_credentials",
-                "account_id": self.zoom_cfg.account_id,
-            },
-            auth=(self.zoom_cfg.client_id, self.zoom_cfg.client_secret),
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        self._token = data["access_token"]
-        self._token_expiry = time.time() + data.get("expires_in", 3600)
-        return self._token
-
-    def _zoom_headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self._get_zoom_token()}",
-            "Content-Type": "application/json",
-        }
-
-    def send_bot(self, meeting: MeetingInfo) -> BotJobResult:
+    def send_bot(self, meeting=None, **kwargs) -> BotJobResult:
         """
-        Invite the HireLogic bot email to the Zoom meeting.
-
-        Zoom will send a meeting invitation email to the bot's address.
-        The bot recognises the host email (ZOOM_HOST_EMAIL) as a trusted
-        sender and joins the meeting automatically.
+        Log into Outlook.com and create a calendar event inviting the bot.
+        The Zoom recurring URL is placed in the location field.
         """
-        import time
-
-        # Add the bot as an invitee on the meeting
-        # Zoom API: PATCH /meetings/{meetingId} to update registrants/invitees
-        # We use the meeting invite approach: add to meeting's invitee list
-        resp = requests.post(
-            f"{self.zoom_cfg.api_base}/meetings/{meeting.meeting_id}/invite_links",
-            headers=self._zoom_headers(),
-            json={
-                "attendees": [
-                    {"name": "HireLogic Notetaker", "email": self.bot_email}
-                ],
-                "ttl": 7200,  # Link valid for 2 hours
-            },
-            timeout=20,
-        )
-        resp.raise_for_status()
+        from playwright.sync_api import sync_playwright
 
         invited_at = time.time()
-        logger.info(
-            f"[BotTrigger] Invited {self.bot_email} to Zoom meeting {meeting.meeting_id}"
-        )
+        event_id = None
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+
+            try:
+                # Step 1: Log into Outlook.com
+                logger.info("[BotTrigger] Logging into Outlook.com...")
+                page.goto("https://outlook.live.com/calendar/")
+                page.wait_for_load_state("networkidle", timeout=30000)
+
+                # Handle sign in
+                if "login" in page.url or "live.com" in page.url:
+                    # Enter email
+                    page.fill('input[type="email"]', self.outlook_email)
+                    page.click('input[type="submit"]')
+                    page.wait_for_load_state("networkidle", timeout=15000)
+
+                    # Enter password
+                    page.fill('input[type="password"]', self.outlook_password)
+                    page.click('input[type="submit"]')
+                    page.wait_for_load_state("networkidle", timeout=15000)
+
+                    # Handle "Stay signed in?" prompt
+                    try:
+                        page.click('input[type="submit"]', timeout=5000)
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+
+                logger.info("[BotTrigger] Logged in successfully")
+
+                # Step 2: Create a new calendar event
+                logger.info("[BotTrigger] Creating calendar event...")
+
+                # Click "New event" button
+                page.click('[aria-label="New event"]', timeout=15000)
+                page.wait_for_load_state("networkidle", timeout=10000)
+
+                # Fill in event title
+                page.fill('[placeholder="Add a title"]', "HireLogic Bot Test")
+
+                # Add the bot as an attendee
+                page.fill('[placeholder="Invite attendees"]', self.bot_email)
+                page.keyboard.press("Enter")
+                time.sleep(1)
+
+                # Set location to Zoom URL
+                try:
+                    page.click('[aria-label="Search for a location"]', timeout=5000)
+                    page.fill('[aria-label="Search for a location"]', self.zoom_url)
+                except Exception:
+                    try:
+                        page.click('text=Add a location', timeout=5000)
+                        page.fill('[placeholder="Search for a location"]', self.zoom_url)
+                    except Exception:
+                        logger.warning("[BotTrigger] Could not set location field")
+
+                time.sleep(1)
+
+                # Save the event
+                page.click('[aria-label="Send"]', timeout=10000)
+                page.wait_for_load_state("networkidle", timeout=15000)
+
+                event_id = f"outlook-{int(invited_at)}"
+                logger.info(f"[BotTrigger] Calendar event created, bot invited: {self.bot_email}")
+
+            except Exception as e:
+                logger.error(f"[BotTrigger] Error creating calendar event: {e}")
+                raise
+            finally:
+                browser.close()
 
         return BotJobResult(
-            platform=meeting.platform,
-            meeting_id=meeting.meeting_id,
-            join_url=meeting.join_url,
+            platform="zoom",
+            meeting_id=config.zoom.recurring_meeting_id,
+            join_url=self.zoom_url,
             bot_email=self.bot_email,
             invited_at=invited_at,
+            calendar_event_id=event_id,
             status="invited",
         )
 
     def get_participants(self, meeting_id: str) -> list[str]:
-        """
-        Fetch the live participant list for a Zoom meeting.
-        Returns display names of everyone currently in the meeting.
-        Used by the observer to detect when the bot has joined.
-        """
+        """Fetch the live participant list for the recurring Zoom meeting."""
+        import requests
         try:
+            zoom_cfg = config.zoom
+            resp = requests.post(
+                "https://zoom.us/oauth/token",
+                params={
+                    "grant_type": "account_credentials",
+                    "account_id": zoom_cfg.account_id,
+                },
+                auth=(zoom_cfg.client_id, zoom_cfg.client_secret),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            token = resp.json()["access_token"]
+
             resp = requests.get(
-                f"{self.zoom_cfg.api_base}/meetings/{meeting_id}/participants",
-                headers=self._zoom_headers(),
+                f"{zoom_cfg.api_base}/meetings/{meeting_id}/participants",
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=15,
             )
             if resp.status_code == 404:
                 return []
             resp.raise_for_status()
-            data = resp.json()
-            return [p.get("name", "") for p in data.get("participants", [])]
+            return [p.get("name", "") for p in resp.json().get("participants", [])]
         except Exception as e:
             logger.warning(f"[BotTrigger] Could not fetch participants: {e}")
             return []
