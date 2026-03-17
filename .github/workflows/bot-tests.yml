@@ -1,92 +1,97 @@
-name: HireLogic Bot Integration Tests
+"""
+config/settings.py
+Central configuration for the HireLogic bot test framework.
+All values can be overridden via environment variables.
+"""
 
-on:
-  push:
-    branches: [main]
-  # Run manually
-  workflow_dispatch:
-    inputs:
-      test_filter:
-        description: "Run only tests matching this name (e.g. 'join')"
-        required: false
-        default: ""
+import os
+from dataclasses import dataclass, field
 
-env:
-  PYTHON_VERSION: "3.11"
 
-jobs:
-  test-zoom:
-    name: Zoom Tests
-    runs-on: ubuntu-latest
-    env:
-      HIRELOGIC_BOT_EMAIL: ${{ secrets.HIRELOGIC_BOT_EMAIL }}
-      ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
-      ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
-      ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
-      ZOOM_HOST_EMAIL: ${{ secrets.ZOOM_HOST_EMAIL }}
-      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+@dataclass
+class HireLogicConfig:
+    # The dedicated email address of the HireLogic notetaker bot.
+    # This is the address you invite to Zoom meetings to trigger it to join.
+    bot_email: str = os.getenv("HIRELOGIC_BOT_EMAIL", "")
 
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+@dataclass
+class GmailConfig:
+    # The Gmail address used as Zoom host AND that receives transcript emails.
+    # Must be the same as ZOOM_HOST_EMAIL — the bot sends the transcript
+    # to the meeting organizer, which is this address.
+    test_address: str = os.getenv("GMAIL_TEST_ADDRESS", "")
+    # Path to Google service account JSON (used in CI/GitHub Actions)
+    service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    # Path to OAuth token file (used in local development)
+    token_path: str = os.getenv("GMAIL_TOKEN_PATH", "config/gmail_token.json")
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y pulseaudio pulseaudio-utils sox libsox-fmt-mp3 ffmpeg
-          pulseaudio --start --exit-idle-time=-1
-          sleep 2
 
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
+@dataclass
+class ZoomConfig:
+    account_id: str = os.getenv("ZOOM_ACCOUNT_ID", "")
+    client_id: str = os.getenv("ZOOM_CLIENT_ID", "")
+    client_secret: str = os.getenv("ZOOM_CLIENT_SECRET", "")
+    host_email: str = os.getenv("ZOOM_HOST_EMAIL", "")
+    api_base: str = "https://api.zoom.us/v2"
 
-      - name: Install Playwright browser
-        run: |
-          pip install playwright
-          playwright install chromium --with-deps
 
-      - name: Generate audio fixtures
-        run: |
-          pip install gtts pydub
-          python audio/generator.py --all
+@dataclass
+class GoogleMeetConfig:
+    service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    calendar_id: str = os.getenv("GOOGLE_CALENDAR_ID", "")
 
-      - name: Run Zoom join test
-        run: |
-          ARGS="tests/test_zoom.py::TestZoomBotJoin::test_bot_joins_within_sla -v --tb=short"
-          if [ -n "${{ github.event.inputs.test_filter }}" ]; then
-            ARGS="tests/test_zoom.py -v --tb=short -k '${{ github.event.inputs.test_filter }}'"
-          fi
-          pytest $ARGS
 
-      - name: Upload test log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: zoom-test-log
-          path: reports/
-          retention-days: 30
+@dataclass
+class TeamsConfig:
+    tenant_id: str = os.getenv("TEAMS_TENANT_ID", "")
+    client_id: str = os.getenv("TEAMS_CLIENT_ID", "")
+    client_secret: str = os.getenv("TEAMS_CLIENT_SECRET", "")
+    user_id: str = os.getenv("TEAMS_USER_ID", "")
+    graph_base: str = "https://graph.microsoft.com/v1.0"
 
-  report:
-    name: Post Result Summary
-    runs-on: ubuntu-latest
-    needs: [test-zoom]
-    if: always()
-    steps:
-      - name: Summary
-        run: |
-          echo "## 🤖 HireLogic Bot Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.test-zoom.result }}" = "success" ]; then
-            echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-            echo "| Zoom | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-            echo "| Zoom | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
-          fi
+
+@dataclass
+class SLAThresholds:
+    """Pass/fail thresholds for assertions."""
+    bot_join_max_seconds: int = int(os.getenv("SLA_BOT_JOIN_SECONDS", "45"))
+    transcript_delivery_max_seconds: int = int(os.getenv("SLA_TRANSCRIPT_SECONDS", "300"))
+    wer_fail_threshold: float = float(os.getenv("SLA_WER_FAIL", "0.20"))
+    wer_warn_threshold: float = float(os.getenv("SLA_WER_WARN", "0.10"))
+    speaker_accuracy_fail: float = float(os.getenv("SLA_SPEAKER_FAIL", "0.80"))
+    speaker_accuracy_warn: float = float(os.getenv("SLA_SPEAKER_WARN", "0.90"))
+
+
+@dataclass
+class AudioConfig:
+    fixtures_dir: str = os.path.join(os.path.dirname(__file__), "../fixtures/audio")
+    ground_truth_dir: str = os.path.join(os.path.dirname(__file__), "../fixtures/ground_truth")
+    pulse_sink_name: str = "hirelogic_test_sink"
+    pulse_source_name: str = "hirelogic_test_sink.monitor"
+    tts_lang: str = "en"
+
+
+@dataclass
+class BrowserConfig:
+    headless: bool = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
+    slow_mo: int = int(os.getenv("BROWSER_SLOW_MO", "0"))
+    use_fake_ui_for_media_stream: bool = True
+    navigation_timeout: int = 30_000
+
+
+@dataclass
+class TestConfig:
+    hirelogic: HireLogicConfig = field(default_factory=HireLogicConfig)
+    gmail: GmailConfig = field(default_factory=GmailConfig)
+    zoom: ZoomConfig = field(default_factory=ZoomConfig)
+    google_meet: GoogleMeetConfig = field(default_factory=GoogleMeetConfig)
+    teams: TeamsConfig = field(default_factory=TeamsConfig)
+    sla: SLAThresholds = field(default_factory=SLAThresholds)
+    audio: AudioConfig = field(default_factory=AudioConfig)
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
+    poll_interval: int = int(os.getenv("POLL_INTERVAL", "5"))
+    max_test_duration_minutes: int = int(os.getenv("MAX_TEST_MINUTES", "30"))
+
+
+# Singleton — import this everywhere
+config = TestConfig()
