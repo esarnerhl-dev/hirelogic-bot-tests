@@ -87,8 +87,25 @@ class BotTrigger:
                 # Step 2: Create a new calendar event
                 logger.info("[BotTrigger] Creating calendar event...")
 
-                # Click "New event" button
-                page.click('[aria-label="New event"]', timeout=15000)
+                # Click "New event" button — try multiple selectors
+                new_event_selectors = [
+                    '[aria-label="New event"]',
+                    '[aria-label="New Event"]',
+                    'button:has-text("New event")',
+                    'button:has-text("New Event")',
+                    '[data-testid="newEventButton"]',
+                ]
+                clicked = False
+                for selector in new_event_selectors:
+                    try:
+                        page.click(selector, timeout=5000)
+                        clicked = True
+                        logger.info(f"[BotTrigger] Clicked new event with: {selector}")
+                        break
+                    except Exception:
+                        continue
+                if not clicked:
+                    raise Exception("Could not find New event button on Outlook calendar page")
                 page.wait_for_load_state("networkidle", timeout=10000)
 
                 # Fill in event title
