@@ -60,53 +60,46 @@ class BotTrigger:
             try:
                 # Step 1: Log into Outlook.com
                 logger.info("[BotTrigger] Logging into Outlook.com...")
-                page.goto("https://outlook.live.com/calendar/")
+                page.goto("https://login.live.com/")
                 page.wait_for_load_state("networkidle", timeout=30000)
 
-                # Handle sign in
-                if "login" in page.url or "live.com" in page.url:
-                    # Enter email
-                    page.fill('input[type="email"]', self.outlook_email)
-                    page.click('input[type="submit"]')
-                    page.wait_for_load_state("networkidle", timeout=15000)
+                # Enter email
+                logger.info(f"[BotTrigger] Entering email...")
+                page.wait_for_selector('input[type="email"]', timeout=30000)
+                page.fill('input[type="email"]', self.outlook_email)
+                page.click('input[type="submit"]')
+                page.wait_for_load_state("networkidle", timeout=15000)
 
-                    # Enter password
-                    page.fill('input[type="password"]', self.outlook_password)
-                    page.click('input[type="submit"]')
-                    page.wait_for_load_state("networkidle", timeout=15000)
+                # Enter password
+                logger.info("[BotTrigger] Entering password...")
+                page.wait_for_selector('input[type="password"]', timeout=15000)
+                page.fill('input[type="password"]', self.outlook_password)
+                page.click('input[type="submit"]')
+                page.wait_for_load_state("networkidle", timeout=15000)
 
-                    # Handle "Stay signed in?" prompt
-                    try:
-                        page.click('input[type="submit"]', timeout=5000)
+                # Handle "Stay signed in?" prompt
+                try:
+                    stay_signed_in = page.locator('input[type="submit"]')
+                    if stay_signed_in.is_visible(timeout=5000):
+                        stay_signed_in.click()
                         page.wait_for_load_state("networkidle", timeout=10000)
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
 
-                logger.info("[BotTrigger] Logged in successfully")
+                # Now navigate to calendar
+                logger.info("[BotTrigger] Navigating to calendar...")
+                page.goto("https://outlook.live.com/calendar/0/addevent")
+                page.wait_for_load_state("networkidle", timeout=30000)
+                time.sleep(3)
 
-                # Step 2: Create a new calendar event
-                logger.info("[BotTrigger] Creating calendar event...")
+                logger.info(f"[BotTrigger] Logged in successfully, on page: {page.url}")
 
-                # Click "New event" button — try multiple selectors
-                new_event_selectors = [
-                    '[aria-label="New event"]',
-                    '[aria-label="New Event"]',
-                    'button:has-text("New event")',
-                    'button:has-text("New Event")',
-                    '[data-testid="newEventButton"]',
-                ]
-                clicked = False
-                for selector in new_event_selectors:
-                    try:
-                        page.click(selector, timeout=5000)
-                        clicked = True
-                        logger.info(f"[BotTrigger] Clicked new event with: {selector}")
-                        break
-                    except Exception:
-                        continue
-                if not clicked:
-                    raise Exception("Could not find New event button on Outlook calendar page")
-                page.wait_for_load_state("networkidle", timeout=10000)
+                # Step 2: Fill in the new event form
+                # We navigated directly to addevent page so no button click needed
+                logger.info("[BotTrigger] Filling in calendar event form...")
+
+                # Wait for title field
+                page.wait_for_selector('[placeholder="Add a title"]', timeout=20000)
 
                 # Fill in event title
                 page.fill('[placeholder="Add a title"]', "HireLogic Bot Test")
