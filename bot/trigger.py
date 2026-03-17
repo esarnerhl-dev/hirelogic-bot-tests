@@ -67,21 +67,23 @@ class BotTrigger:
                 logger.info(f"[BotTrigger] Entering email...")
                 page.wait_for_selector('input[type="email"]', timeout=30000)
                 page.fill('input[type="email"]', self.outlook_email)
-                page.click('input[type="submit"]')
+                # Microsoft login uses id="idSIButton9" for the Next button
+                page.click('#idSIButton9')
                 page.wait_for_load_state("networkidle", timeout=15000)
+                time.sleep(2)
 
                 # Enter password
                 logger.info("[BotTrigger] Entering password...")
                 page.wait_for_selector('input[type="password"]', timeout=15000)
                 page.fill('input[type="password"]', self.outlook_password)
-                page.click('input[type="submit"]')
+                page.click('#idSIButton9')
                 page.wait_for_load_state("networkidle", timeout=15000)
+                time.sleep(2)
 
-                # Handle "Stay signed in?" prompt
+                # Handle "Stay signed in?" prompt — click Yes
                 try:
-                    stay_signed_in = page.locator('input[type="submit"]')
-                    if stay_signed_in.is_visible(timeout=5000):
-                        stay_signed_in.click()
+                    if page.locator('#idSIButton9').is_visible(timeout=5000):
+                        page.click('#idSIButton9')
                         page.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
