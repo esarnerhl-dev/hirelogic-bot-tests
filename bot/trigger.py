@@ -67,24 +67,51 @@ class BotTrigger:
                 logger.info(f"[BotTrigger] Entering email...")
                 page.wait_for_selector('input[type="email"]', timeout=30000)
                 page.fill('input[type="email"]', self.outlook_email)
-                # Microsoft login uses id="idSIButton9" for the Next button
-                page.click('#idSIButton9')
+                page.screenshot(path="/tmp/debug_01_email.png")
+                logger.info(f"[BotTrigger] Page URL after email: {page.url}")
+
+                # Try clicking Next button with multiple selectors
+                next_selectors = ['#idSIButton9', 'input[type="submit"]', 'button[type="submit"]', '#nextButton']
+                for sel in next_selectors:
+                    try:
+                        if page.locator(sel).is_visible(timeout=3000):
+                            page.click(sel)
+                            logger.info(f"[BotTrigger] Clicked next with: {sel}")
+                            break
+                    except Exception:
+                        continue
                 page.wait_for_load_state("networkidle", timeout=15000)
                 time.sleep(2)
+                page.screenshot(path="/tmp/debug_02_after_email.png")
+                logger.info(f"[BotTrigger] Page URL after next: {page.url}")
 
                 # Enter password
                 logger.info("[BotTrigger] Entering password...")
                 page.wait_for_selector('input[type="password"]', timeout=15000)
                 page.fill('input[type="password"]', self.outlook_password)
-                page.click('#idSIButton9')
+                page.screenshot(path="/tmp/debug_03_password.png")
+
+                for sel in next_selectors:
+                    try:
+                        if page.locator(sel).is_visible(timeout=3000):
+                            page.click(sel)
+                            logger.info(f"[BotTrigger] Clicked signin with: {sel}")
+                            break
+                    except Exception:
+                        continue
                 page.wait_for_load_state("networkidle", timeout=15000)
                 time.sleep(2)
+                page.screenshot(path="/tmp/debug_04_after_password.png")
+                logger.info(f"[BotTrigger] Page URL after signin: {page.url}")
 
-                # Handle "Stay signed in?" prompt — click Yes
+                # Handle "Stay signed in?" prompt
                 try:
-                    if page.locator('#idSIButton9').is_visible(timeout=5000):
-                        page.click('#idSIButton9')
-                        page.wait_for_load_state("networkidle", timeout=10000)
+                    for sel in next_selectors:
+                        if page.locator(sel).is_visible(timeout=3000):
+                            page.click(sel)
+                            logger.info(f"[BotTrigger] Clicked stay signed in with: {sel}")
+                            break
+                    page.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
 
