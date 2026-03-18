@@ -159,12 +159,45 @@ class BotTrigger:
                 page.screenshot(path="/tmp/debug_06_form.png")
                 time.sleep(2)
 
-                # Click and fill title field
-                # The form opens as a dialog — click the Add title area first
-                page.click('[aria-label="Add title"], [placeholder="Add title"], div:has-text("Add title")', timeout=10000)
-                time.sleep(0.5)
-                page.keyboard.type("HireLogic Bot Test")
-                logger.info("[BotTrigger] Filled title")
+                # Fill title — try multiple approaches
+                logger.info("[BotTrigger] Filling title field...")
+                title_filled = False
+
+                # Approach 1: direct input selector
+                for sel in ['input[aria-label="Add a title"]', 'input[placeholder="Add a title"]',
+                            'input[aria-label="Add title"]', 'input[placeholder="Add title"]']:
+                    try:
+                        page.wait_for_selector(sel, timeout=3000)
+                        page.fill(sel, "HireLogic Bot Test")
+                        logger.info(f"[BotTrigger] Filled title with: {sel}")
+                        title_filled = True
+                        break
+                    except Exception:
+                        continue
+
+                # Approach 2: Tab into the form from the dialog
+                if not title_filled:
+                    try:
+                        # Press Tab to focus first field in dialog
+                        page.keyboard.press("Tab")
+                        time.sleep(0.3)
+                        page.keyboard.type("HireLogic Bot Test")
+                        logger.info("[BotTrigger] Filled title via Tab")
+                        title_filled = True
+                    except Exception:
+                        pass
+
+                # Approach 3: Use page.get_by_placeholder
+                if not title_filled:
+                    try:
+                        page.get_by_placeholder("Add a title").fill("HireLogic Bot Test")
+                        logger.info("[BotTrigger] Filled title via get_by_placeholder")
+                        title_filled = True
+                    except Exception:
+                        pass
+
+                page.screenshot(path="/tmp/debug_07_after_title.png")
+                logger.info(f"[BotTrigger] Title filled: {title_filled}")
 
                 # Add the bot as an attendee
                 page.click('[placeholder="Invite required attendees"]', timeout=10000)
