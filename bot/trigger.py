@@ -104,34 +104,81 @@ class BotTrigger:
                 page.screenshot(path="/tmp/debug_04_after_password.png")
                 logger.info(f"[BotTrigger] Page URL after signin: {page.url}")
 
-                # Handle "Stay signed in?" prompt
-                try:
-                    for sel in next_selectors:
-                        if page.locator(sel).is_visible(timeout=3000):
-                            page.click(sel)
-                            logger.info(f"[BotTrigger] Clicked stay signed in with: {sel}")
-                            break
-                    page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception:
-                    pass
+                # Handle any interstitial pages (privacy notice, stay signed in, etc.)
+                for _ in range(3):
+                    try:
+                        # "A quick note about your Microsoft account" OK button
+                        if page.locator('button:has-text("OK")').is_visible(timeout=3000):
+                            page.click('button:has-text("OK")')
+                            logger.info("[BotTrigger] Dismissed Microsoft privacy notice")
+                            page.wait_for_load_state("networkidle", timeout=10000)
+                            time.sleep(1)
+                            continue
+                        # "Stay signed in?" prompt
+                        for sel in next_selectors:
+                            if page.locator(sel).is_visible(timeout=2000):
+                                page.click(sel)
+                                logger.info(f"[BotTrigger] Clicked stay signed in: {sel}")
+                                page.wait_for_load_state("networkidle", timeout=10000)
+                                time.sleep(1)
+                                break
+                    except Exception:
+                        break
 
                 # Now navigate to calendar
                 logger.info("[BotTrigger] Navigating to calendar...")
-                page.goto("https://outlook.live.com/calendar/0/addevent")
+                page.goto("https://outlook.live.com/calendar/0/view/workweek")
                 page.wait_for_load_state("networkidle", timeout=30000)
                 time.sleep(3)
-
                 logger.info(f"[BotTrigger] Logged in successfully, on page: {page.url}")
 
+                # Click New event button
+                logger.info("[BotTrigger] Clicking New event button...")
+                new_event_selectors = [
+                    '[aria-label="New event"]',
+                    '[aria-label="New Event"]',
+                    'button:has-text("New event")',
+                    'button:has-text("New Event")',
+                    '[data-testid="newEventButton"]',
+                ]
+                for sel in new_event_selectors:
+                    try:
+                        if page.locator(sel).is_visible(timeout=4000):
+                            page.click(sel)
+                            logger.info(f"[BotTrigger] Clicked new event: {sel}")
+                            break
+                    except Exception:
+                        continue
+                page.wait_for_load_state("networkidle", timeout=15000)
+                time.sleep(2)
+                page.screenshot(path="/tmp/debug_05_after_new_event.png")
+                logger.info(f"[BotTrigger] URL after new event click: {page.url}")
+
                 # Step 2: Fill in the new event form
-                # We navigated directly to addevent page so no button click needed
                 logger.info("[BotTrigger] Filling in calendar event form...")
+                page.screenshot(path="/tmp/debug_06_form.png")
 
-                # Wait for title field
-                page.wait_for_selector('[placeholder="Add a title"]', timeout=20000)
-
-                # Fill in event title
-                page.fill('[placeholder="Add a title"]', "HireLogic Bot Test")
+                # Wait for title field — try multiple selectors
+                title_selectors = [
+                    '[placeholder="Add a title"]',
+                    '[aria-label="Add a title"]',
+                    'input[aria-label="Add a title"]',
+                    '.ms-TextField-field',
+                    'input.title',
+                ]
+                title_filled = False
+                for sel in title_selectors:
+                    try:
+                        page.wait_for_selector(sel, timeout=5000)
+                        page.fill(sel, "HireLogic Bot Test")
+                        logger.info(f"[BotTrigger] Filled title with selector: {sel}")
+                        title_filled = True
+                        break
+                    except Exception:
+                        continue
+                if not title_filled:
+                    page.screenshot(path="/tmp/debug_07_title_fail.png")
+                    raise Exception("Could not find title field on event form")
 
                 # Add the bot as an attendee
                 page.fill('[placeholder="Invite attendees"]', self.bot_email)
