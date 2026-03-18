@@ -211,25 +211,27 @@ class BotTrigger:
                 logger.info(f"[BotTrigger] Title filled: {title_filled}")
 
                 # Add the bot as an attendee
-                page.click('[placeholder="Invite required attendees"]', timeout=10000)
+                # The attendees field is a DIV with aria-label, not an input
+                page.click('[aria-label="Invite required attendees"]', timeout=10000)
                 time.sleep(0.5)
                 page.keyboard.type(self.bot_email)
+                time.sleep(1)
                 page.keyboard.press("Enter")
                 time.sleep(2)
                 logger.info(f"[BotTrigger] Added attendee: {self.bot_email}")
 
-                # Set location to Zoom URL
-                page.click('[placeholder="Search for a location"]', timeout=10000)
+                # Set location to Zoom URL using the known input ID
+                page.click('#location-suggestions-picker-input', timeout=10000)
                 time.sleep(0.5)
                 page.keyboard.type(self.zoom_url)
                 time.sleep(1)
-                page.keyboard.press("Escape")  # Close any dropdown
+                page.keyboard.press("Escape")
                 logger.info(f"[BotTrigger] Set location to Zoom URL")
 
                 page.screenshot(path="/tmp/debug_08_before_save.png")
                 time.sleep(1)
 
-                # Save the event — click Send button
+                # Save the event
                 save_selectors = [
                     '[aria-label="Send"]',
                     'button:has-text("Send")',
