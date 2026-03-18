@@ -157,50 +157,51 @@ class BotTrigger:
                 # Step 2: Fill in the new event form
                 logger.info("[BotTrigger] Filling in calendar event form...")
                 page.screenshot(path="/tmp/debug_06_form.png")
+                time.sleep(2)
 
-                # Wait for title field — try multiple selectors
-                title_selectors = [
-                    '[placeholder="Add a title"]',
-                    '[aria-label="Add a title"]',
-                    'input[aria-label="Add a title"]',
-                    '.ms-TextField-field',
-                    'input.title',
-                ]
-                title_filled = False
-                for sel in title_selectors:
-                    try:
-                        page.wait_for_selector(sel, timeout=5000)
-                        page.fill(sel, "HireLogic Bot Test")
-                        logger.info(f"[BotTrigger] Filled title with selector: {sel}")
-                        title_filled = True
-                        break
-                    except Exception:
-                        continue
-                if not title_filled:
-                    page.screenshot(path="/tmp/debug_07_title_fail.png")
-                    raise Exception("Could not find title field on event form")
+                # Click and fill title field
+                # The form opens as a dialog — click the Add title area first
+                page.click('[aria-label="Add title"], [placeholder="Add title"], div:has-text("Add title")', timeout=10000)
+                time.sleep(0.5)
+                page.keyboard.type("HireLogic Bot Test")
+                logger.info("[BotTrigger] Filled title")
 
                 # Add the bot as an attendee
-                page.fill('[placeholder="Invite attendees"]', self.bot_email)
+                page.click('[placeholder="Invite required attendees"]', timeout=10000)
+                time.sleep(0.5)
+                page.keyboard.type(self.bot_email)
                 page.keyboard.press("Enter")
-                time.sleep(1)
+                time.sleep(2)
+                logger.info(f"[BotTrigger] Added attendee: {self.bot_email}")
 
                 # Set location to Zoom URL
-                try:
-                    page.click('[aria-label="Search for a location"]', timeout=5000)
-                    page.fill('[aria-label="Search for a location"]', self.zoom_url)
-                except Exception:
-                    try:
-                        page.click('text=Add a location', timeout=5000)
-                        page.fill('[placeholder="Search for a location"]', self.zoom_url)
-                    except Exception:
-                        logger.warning("[BotTrigger] Could not set location field")
+                page.click('[placeholder="Search for a location"]', timeout=10000)
+                time.sleep(0.5)
+                page.keyboard.type(self.zoom_url)
+                time.sleep(1)
+                page.keyboard.press("Escape")  # Close any dropdown
+                logger.info(f"[BotTrigger] Set location to Zoom URL")
 
+                page.screenshot(path="/tmp/debug_08_before_save.png")
                 time.sleep(1)
 
-                # Save the event
-                page.click('[aria-label="Send"]', timeout=10000)
+                # Save the event — click Send button
+                save_selectors = [
+                    '[aria-label="Send"]',
+                    'button:has-text("Send")',
+                    '[aria-label="Save"]',
+                    'button:has-text("Save")',
+                ]
+                for sel in save_selectors:
+                    try:
+                        if page.locator(sel).is_visible(timeout=3000):
+                            page.click(sel)
+                            logger.info(f"[BotTrigger] Clicked save/send: {sel}")
+                            break
+                    except Exception:
+                        continue
                 page.wait_for_load_state("networkidle", timeout=15000)
+                page.screenshot(path="/tmp/debug_09_after_save.png")
 
                 event_id = f"outlook-{int(invited_at)}"
                 logger.info(f"[BotTrigger] Calendar event created, bot invited: {self.bot_email}")
