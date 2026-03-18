@@ -156,45 +156,56 @@ class BotTrigger:
 
                 # Step 2: Fill in the new event form
                 logger.info("[BotTrigger] Filling in calendar event form...")
+                time.sleep(3)
                 page.screenshot(path="/tmp/debug_06_form.png")
-                time.sleep(2)
 
-                # Fill title — try multiple approaches
-                logger.info("[BotTrigger] Filling title field...")
+                # Dump all input fields visible on the page for debugging
+                inputs = page.eval_on_selector_all(
+                    "input, textarea, [contenteditable]",
+                    """els => els.map(e => ({
+                        tag: e.tagName,
+                        type: e.type || '',
+                        placeholder: e.placeholder || '',
+                        ariaLabel: e.getAttribute('aria-label') || '',
+                        id: e.id || '',
+                        className: e.className || '',
+                        visible: e.offsetParent !== null
+                    }))"""
+                )
+                for i, inp in enumerate(inputs):
+                    logger.info(f"[BotTrigger] Input {i}: {inp}")
+
+                # Try filling the first visible input that looks like a title field
                 title_filled = False
+                for i, inp in enumerate(inputs):
+                    if inp.get('visible') and any(x in (inp.get('placeholder','') + inp.get('ariaLabel','')).lower()
+                                                   for x in ['title', 'subject', 'add']):
+                        try:
+                            sel = f"input:nth-of-type({i+1})"
+                            if inp.get('id'):
+                                sel = f"#{inp['id']}"
+                            elif inp.get('placeholder'):
+                                sel = f'[placeholder="{inp["placeholder"]}"]'
+                            elif inp.get('ariaLabel'):
+                                sel = f'[aria-label="{inp["ariaLabel"]}"]'
+                            page.fill(sel, "HireLogic Bot Test")
+                            logger.info(f"[BotTrigger] Filled title with: {sel}")
+                            title_filled = True
+                            break
+                        except Exception as e:
+                            logger.warning(f"[BotTrigger] Failed to fill with {sel}: {e}")
 
-                # Approach 1: direct input selector
-                for sel in ['input[aria-label="Add a title"]', 'input[placeholder="Add a title"]',
-                            'input[aria-label="Add title"]', 'input[placeholder="Add title"]']:
-                    try:
-                        page.wait_for_selector(sel, timeout=3000)
-                        page.fill(sel, "HireLogic Bot Test")
-                        logger.info(f"[BotTrigger] Filled title with: {sel}")
-                        title_filled = True
-                        break
-                    except Exception:
-                        continue
-
-                # Approach 2: Tab into the form from the dialog
                 if not title_filled:
+                    # Last resort: click the first input and type
                     try:
-                        # Press Tab to focus first field in dialog
-                        page.keyboard.press("Tab")
-                        time.sleep(0.3)
-                        page.keyboard.type("HireLogic Bot Test")
-                        logger.info("[BotTrigger] Filled title via Tab")
-                        title_filled = True
-                    except Exception:
-                        pass
-
-                # Approach 3: Use page.get_by_placeholder
-                if not title_filled:
-                    try:
-                        page.get_by_placeholder("Add a title").fill("HireLogic Bot Test")
-                        logger.info("[BotTrigger] Filled title via get_by_placeholder")
-                        title_filled = True
-                    except Exception:
-                        pass
+                        visible_inputs = page.locator("input:visible").all()
+                        if visible_inputs:
+                            visible_inputs[0].click()
+                            page.keyboard.type("HireLogic Bot Test")
+                            logger.info("[BotTrigger] Filled title via first visible input")
+                            title_filled = True
+                    except Exception as e:
+                        logger.warning(f"[BotTrigger] Last resort failed: {e}")
 
                 page.screenshot(path="/tmp/debug_07_after_title.png")
                 logger.info(f"[BotTrigger] Title filled: {title_filled}")
