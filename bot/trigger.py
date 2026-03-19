@@ -128,9 +128,27 @@ class BotTrigger:
                 # Now navigate to calendar
                 logger.info("[BotTrigger] Navigating to calendar...")
                 page.goto("https://outlook.live.com/calendar/0/view/workweek")
-                page.wait_for_load_state("networkidle", timeout=30000)
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
                 time.sleep(3)
                 logger.info(f"[BotTrigger] Logged in successfully, on page: {page.url}")
+
+                # Dismiss popups before interacting (timezone dialog, reminders)
+                try:
+                    not_now = page.locator('button:has-text("Not now")')
+                    if not_now.is_visible(timeout=2000):
+                        not_now.click()
+                        logger.info("[BotTrigger] Dismissed timezone dialog")
+                        time.sleep(1)
+                except Exception:
+                    pass
+                try:
+                    dismiss_all = page.locator('button:has-text("Dismiss all")')
+                    if dismiss_all.is_visible(timeout=2000):
+                        dismiss_all.click()
+                        logger.info("[BotTrigger] Dismissed reminders")
+                        time.sleep(1)
+                except Exception:
+                    pass
 
                 # Click New event button
                 logger.info("[BotTrigger] Clicking New event button...")
