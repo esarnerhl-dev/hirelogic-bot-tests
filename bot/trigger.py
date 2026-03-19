@@ -245,35 +245,50 @@ class BotTrigger:
                 page.keyboard.press("Escape")
                 logger.info(f"[BotTrigger] Set location to Zoom URL")
 
-                # Set start time to exactly 5 minutes from now (UTC, matching GitHub Actions timezone)
+                # Click "More options" to open the full event form with date/time fields
+                try:
+                    more_options = page.locator('button:has-text("More options")')
+                    if more_options.is_visible(timeout=3000):
+                        more_options.click()
+                        page.wait_for_load_state("domcontentloaded", timeout=15000)
+                        time.sleep(2)
+                        logger.info("[BotTrigger] Opened full event form via More options")
+                except Exception as e:
+                    logger.warning(f"[BotTrigger] Could not open More options: {e}")
+
+                # Set start time to exactly 5 minutes from now (UTC)
                 from datetime import datetime, timedelta, timezone
                 start_time = datetime.now(timezone.utc) + timedelta(minutes=5)
                 start_date_str = start_time.strftime("%-m/%-d/%Y")
                 start_time_str = start_time.strftime("%-I:%M %p")
                 logger.info(f"[BotTrigger] Setting start time to {start_date_str} {start_time_str}")
                 try:
-                    # Click the date field, select all, and type the new date
-                    date_input = page.locator('input[aria-label="Start date"]').first
-                    date_input.click(force=True, timeout=5000)
-                    time.sleep(0.3)
-                    page.keyboard.press("Control+a")
-                    page.keyboard.type(start_date_str)
-                    page.keyboard.press("Enter")
-                    time.sleep(0.5)
+                    # Try multiple possible aria-labels for the start date/time fields
+                    for date_sel in ['input[aria-label="Start date"]', 'input[aria-label="start date"]',
+                                     'input[id*="startDate"]', 'input[id*="start-date"]']:
+                        if page.locator(date_sel).count() > 0:
+                            date_input = page.locator(date_sel).first
+                            date_input.click(force=True, timeout=3000)
+                            time.sleep(0.3)
+                            page.keyboard.press("Control+a")
+                            page.keyboard.type(start_date_str)
+                            page.keyboard.press("Tab")
+                            time.sleep(0.3)
+                            logger.info(f"[BotTrigger] Set date with selector: {date_sel}")
+                            break
 
-                    # Click the time field, select all, and type the new time
-                    time_input = page.locator('input[aria-label="Start time"]').first
-                    time_input.click(force=True, timeout=5000)
-                    time.sleep(0.3)
-                    page.keyboard.press("Control+a")
-                    page.keyboard.type(start_time_str)
-                    page.keyboard.press("Enter")
-                    time.sleep(0.5)
-
-                    # Verify by reading back the value
-                    actual_date = date_input.input_value()
-                    actual_time = time_input.input_value()
-                    logger.info(f"[BotTrigger] Start time set — date field: '{actual_date}', time field: '{actual_time}'")
+                    for time_sel in ['input[aria-label="Start time"]', 'input[aria-label="start time"]',
+                                     'input[id*="startTime"]', 'input[id*="start-time"]']:
+                        if page.locator(time_sel).count() > 0:
+                            time_input = page.locator(time_sel).first
+                            time_input.click(force=True, timeout=3000)
+                            time.sleep(0.3)
+                            page.keyboard.press("Control+a")
+                            page.keyboard.type(start_time_str)
+                            page.keyboard.press("Tab")
+                            time.sleep(0.5)
+                            logger.info(f"[BotTrigger] Set time with selector: {time_sel}")
+                            break
                 except Exception as e:
                     logger.warning(f"[BotTrigger] Could not set start time: {e}")
 
