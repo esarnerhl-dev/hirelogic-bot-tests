@@ -210,9 +210,8 @@ class BotTrigger:
                 page.screenshot(path="/tmp/debug_07_after_title.png")
                 logger.info(f"[BotTrigger] Title filled: {title_filled}")
 
-                # Add the bot as an attendee
-                # The attendees field is a DIV with aria-label, not an input
-                page.click('[aria-label="Invite required attendees"]', timeout=10000)
+                # Add the bot as an attendee using force=True
+                page.click('[aria-label="Invite required attendees"]', force=True, timeout=10000)
                 time.sleep(0.5)
                 page.keyboard.type(self.bot_email)
                 time.sleep(1)
@@ -220,8 +219,8 @@ class BotTrigger:
                 time.sleep(2)
                 logger.info(f"[BotTrigger] Added attendee: {self.bot_email}")
 
-                # Set location to Zoom URL using the known input ID
-                page.click('#location-suggestions-picker-input', timeout=10000)
+                # Set location using force=True
+                page.click('#location-suggestions-picker-input', force=True, timeout=10000)
                 time.sleep(0.5)
                 page.keyboard.type(self.zoom_url)
                 time.sleep(1)
