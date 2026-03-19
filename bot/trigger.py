@@ -227,28 +227,35 @@ class BotTrigger:
                 page.keyboard.press("Escape")
                 logger.info(f"[BotTrigger] Set location to Zoom URL")
 
-                # Set start time to exactly 5 minutes from now
-                from datetime import datetime, timedelta
-                start_time = datetime.now() + timedelta(minutes=5)
+                # Set start time to exactly 5 minutes from now (UTC, matching GitHub Actions timezone)
+                from datetime import datetime, timedelta, timezone
+                start_time = datetime.now(timezone.utc) + timedelta(minutes=5)
                 start_date_str = start_time.strftime("%-m/%-d/%Y")
                 start_time_str = start_time.strftime("%-I:%M %p")
                 logger.info(f"[BotTrigger] Setting start time to {start_date_str} {start_time_str}")
                 try:
+                    # Click the date field, select all, and type the new date
                     date_input = page.locator('input[aria-label="Start date"]').first
                     date_input.click(force=True, timeout=5000)
                     time.sleep(0.3)
-                    date_input.triple_click()
-                    date_input.type(start_date_str)
-                    page.keyboard.press("Tab")
-                    time.sleep(0.3)
+                    page.keyboard.press("Control+a")
+                    page.keyboard.type(start_date_str)
+                    page.keyboard.press("Enter")
+                    time.sleep(0.5)
+
+                    # Click the time field, select all, and type the new time
                     time_input = page.locator('input[aria-label="Start time"]').first
                     time_input.click(force=True, timeout=5000)
                     time.sleep(0.3)
-                    time_input.triple_click()
-                    time_input.type(start_time_str)
-                    page.keyboard.press("Tab")
+                    page.keyboard.press("Control+a")
+                    page.keyboard.type(start_time_str)
+                    page.keyboard.press("Enter")
                     time.sleep(0.5)
-                    logger.info(f"[BotTrigger] Start time set to {start_date_str} {start_time_str}")
+
+                    # Verify by reading back the value
+                    actual_date = date_input.input_value()
+                    actual_time = time_input.input_value()
+                    logger.info(f"[BotTrigger] Start time set — date field: '{actual_date}', time field: '{actual_time}'")
                 except Exception as e:
                     logger.warning(f"[BotTrigger] Could not set start time: {e}")
 
