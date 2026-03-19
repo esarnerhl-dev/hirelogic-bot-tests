@@ -227,26 +227,67 @@ class BotTrigger:
                 page.keyboard.press("Escape")
                 logger.info(f"[BotTrigger] Set location to Zoom URL")
 
+                # Set start time to exactly 5 minutes from now
+                from datetime import datetime, timedelta
+                start_time = datetime.now() + timedelta(minutes=5)
+                start_date_str = start_time.strftime("%-m/%-d/%Y")
+                start_time_str = start_time.strftime("%-I:%M %p")
+                logger.info(f"[BotTrigger] Setting start time to {start_date_str} {start_time_str}")
+                try:
+                    date_input = page.locator('input[aria-label="Start date"]').first
+                    date_input.click(force=True, timeout=5000)
+                    time.sleep(0.3)
+                    date_input.triple_click()
+                    date_input.type(start_date_str)
+                    page.keyboard.press("Tab")
+                    time.sleep(0.3)
+                    time_input = page.locator('input[aria-label="Start time"]').first
+                    time_input.click(force=True, timeout=5000)
+                    time.sleep(0.3)
+                    time_input.triple_click()
+                    time_input.type(start_time_str)
+                    page.keyboard.press("Tab")
+                    time.sleep(0.5)
+                    logger.info(f"[BotTrigger] Start time set to {start_date_str} {start_time_str}")
+                except Exception as e:
+                    logger.warning(f"[BotTrigger] Could not set start time: {e}")
+
                 page.screenshot(path="/tmp/debug_08_before_save.png")
                 time.sleep(1)
 
-                # Save the event
+                # Save the event — click Send and verify the form closes
+                url_before = page.url
                 save_selectors = [
                     '[aria-label="Send"]',
                     'button:has-text("Send")',
                     '[aria-label="Save"]',
                     'button:has-text("Save")',
                 ]
+                sent = False
                 for sel in save_selectors:
                     try:
                         if page.locator(sel).is_visible(timeout=3000):
                             page.click(sel)
                             logger.info(f"[BotTrigger] Clicked save/send: {sel}")
+                            sent = True
                             break
                     except Exception:
                         continue
+
+                # Handle any "send anyway" confirmation dialog (e.g. past time warning)
+                time.sleep(2)
+                for confirm_sel in ['button:has-text("Send anyway")', 'button:has-text("OK")', 'button:has-text("Yes")']:
+                    try:
+                        if page.locator(confirm_sel).is_visible(timeout=2000):
+                            page.click(confirm_sel)
+                            logger.info(f"[BotTrigger] Confirmed dialog: {confirm_sel}")
+                            break
+                    except Exception:
+                        continue
+
                 page.wait_for_load_state("networkidle", timeout=15000)
                 page.screenshot(path="/tmp/debug_09_after_save.png")
+                logger.info(f"[BotTrigger] URL after save: {page.url} (was: {url_before})")
 
                 event_id = f"outlook-{int(invited_at)}"
                 logger.info(f"[BotTrigger] Calendar event created, bot invited: {self.bot_email}")
@@ -335,8 +376,30 @@ class BotTrigger:
                 logger.info(f"[BotTrigger] Standard participants: {names3}")
                 return names3
 
-            logger.debug(f"[BotTrigger] All participant endpoints returned no data. "
-                        f"Dashboard: {resp.status_code}, Past: {resp2.status_code}, Standard: {resp3.status_code}")
+            logger.warning(f"[BotTrigger] All participant endpoints failed. "
+                          f"Dashboard: {resp.status_code} {resp.text[:200]}, "
+                          f"Past: {resp2.status_code} {resp2.text[:200]}, "
+                          f"Standard: {resp3.status_code} {resp3.text[:200]}")
+
+            # Try listing all live meetings to find the active instance
+            try:
+                resp4 = requests.get(
+                    f"{zoom_cfg.api_base}/metrics/meetings",
+                    headers=headers,
+                    params={"type": "live"},
+                    timeout=15,
+                )
+                if resp4.ok:
+                    meetings = resp4.json().get("meetings", [])
+                    logger.info(f"[BotTrigger] Live meetings: {[m.get('id') for m in meetings]}")
+                    for m in meetings:
+                        if str(m.get("id")) == str(meeting_id) or str(m.get("uuid", "")) != "":
+                            logger.info(f"[BotTrigger] Found live meeting: {m}")
+                else:
+                    logger.warning(f"[BotTrigger] Live meetings list: {resp4.status_code} {resp4.text[:200]}")
+            except Exception as e:
+                logger.warning(f"[BotTrigger] Could not list live meetings: {e}")
+
             return []
 
         except Exception as e:
