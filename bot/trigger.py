@@ -268,32 +268,78 @@ class BotTrigger:
             status="invited",
         )
 
-    def get_participants(self, meeting_id: str) -> list[str]:
-        """Fetch the live participant list for the recurring Zoom meeting."""
+    def _get_zoom_token(self) -> str:
+        """Get a Zoom OAuth token."""
         import requests
-        try:
-            zoom_cfg = config.zoom
-            resp = requests.post(
-                "https://zoom.us/oauth/token",
-                params={
-                    "grant_type": "account_credentials",
-                    "account_id": zoom_cfg.account_id,
-                },
-                auth=(zoom_cfg.client_id, zoom_cfg.client_secret),
-                timeout=15,
-            )
-            resp.raise_for_status()
-            token = resp.json()["access_token"]
+        zoom_cfg = config.zoom
+        resp = requests.post(
+            "https://zoom.us/oauth/token",
+            params={
+                "grant_type": "account_credentials",
+                "account_id": zoom_cfg.account_id,
+            },
+            auth=(zoom_cfg.client_id, zoom_cfg.client_secret),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
 
+    def get_participants(self, meeting_id: str) -> list[str]:
+        """
+        Fetch the live participant list for the recurring Zoom meeting.
+        Tries multiple endpoints since different account types support different APIs.
+        """
+        import requests
+        zoom_cfg = config.zoom
+        try:
+            token = self._get_zoom_token()
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Endpoint 1: Dashboard API (works for meetings started via link)
             resp = requests.get(
-                f"{zoom_cfg.api_base}/meetings/{meeting_id}/participants",
-                headers={"Authorization": f"Bearer {token}"},
+                f"{zoom_cfg.api_base}/metrics/meetings/{meeting_id}/participants",
+                headers=headers,
+                params={"type": "live"},
                 timeout=15,
             )
-            if resp.status_code == 404:
-                return []
-            resp.raise_for_status()
-            return [p.get("name", "") for p in resp.json().get("participants", [])]
+            if resp.ok:
+                data = resp.json()
+                names = [p.get("name", "") or p.get("user_name", "") 
+                         for p in data.get("participants", [])]
+                if names:
+                    logger.info(f"[BotTrigger] Dashboard API participants: {names}")
+                    return names
+
+            # Endpoint 2: Past meeting participants (catches recent joiners)
+            resp2 = requests.get(
+                f"{zoom_cfg.api_base}/past_meetings/{meeting_id}/participants",
+                headers=headers,
+                timeout=15,
+            )
+            if resp2.ok:
+                data2 = resp2.json()
+                names2 = [p.get("name", "") or p.get("user_name", "")
+                          for p in data2.get("participants", [])]
+                if names2:
+                    logger.info(f"[BotTrigger] Past meeting participants: {names2}")
+                    return names2
+
+            # Endpoint 3: Original endpoint (works for API-started meetings)
+            resp3 = requests.get(
+                f"{zoom_cfg.api_base}/meetings/{meeting_id}/participants",
+                headers=headers,
+                timeout=15,
+            )
+            if resp3.ok:
+                data3 = resp3.json()
+                names3 = [p.get("name", "") for p in data3.get("participants", [])]
+                logger.info(f"[BotTrigger] Standard participants: {names3}")
+                return names3
+
+            logger.debug(f"[BotTrigger] All participant endpoints returned no data. "
+                        f"Dashboard: {resp.status_code}, Past: {resp2.status_code}, Standard: {resp3.status_code}")
+            return []
+
         except Exception as e:
             logger.warning(f"[BotTrigger] Could not fetch participants: {e}")
             return []
