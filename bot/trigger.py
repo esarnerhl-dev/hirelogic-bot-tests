@@ -256,39 +256,50 @@ class BotTrigger:
                 except Exception as e:
                     logger.warning(f"[BotTrigger] Could not open More options: {e}")
 
-                # Set start time to exactly 5 minutes from now (UTC)
+                # Set start time - compute 5 minutes from now in UTC
                 from datetime import datetime, timedelta, timezone
                 start_time = datetime.now(timezone.utc) + timedelta(minutes=5)
                 start_date_str = start_time.strftime("%-m/%-d/%Y")
                 start_time_str = start_time.strftime("%-I:%M %p")
                 logger.info(f"[BotTrigger] Setting start time to {start_date_str} {start_time_str}")
+
+                # Log all visible inputs to find date/time field names
                 try:
-                    # Try multiple possible aria-labels for the start date/time fields
-                    for date_sel in ['input[aria-label="Start date"]', 'input[aria-label="start date"]',
-                                     'input[id*="startDate"]', 'input[id*="start-date"]']:
+                    all_inputs = page.evaluate("""
+                        () => Array.from(document.querySelectorAll('input'))
+                            .filter(i => i.offsetParent !== null)
+                            .map(i => ({label: i.getAttribute('aria-label'), type: i.type, placeholder: i.placeholder}))
+                    """)
+                    logger.info(f"[BotTrigger] All visible inputs: {all_inputs}")
+                except Exception:
+                    pass
+
+                try:
+                    for date_sel in ['input[aria-label="Start date"]', 'input[aria-label="start date"]']:
                         if page.locator(date_sel).count() > 0:
-                            date_input = page.locator(date_sel).first
-                            date_input.click(force=True, timeout=3000)
+                            page.locator(date_sel).first.click(force=True, timeout=3000)
                             time.sleep(0.3)
                             page.keyboard.press("Control+a")
                             page.keyboard.type(start_date_str)
                             page.keyboard.press("Tab")
                             time.sleep(0.3)
-                            logger.info(f"[BotTrigger] Set date with selector: {date_sel}")
+                            logger.info(f"[BotTrigger] Set date: {start_date_str} using {date_sel}")
                             break
+                    else:
+                        logger.warning("[BotTrigger] Start date field not found")
 
-                    for time_sel in ['input[aria-label="Start time"]', 'input[aria-label="start time"]',
-                                     'input[id*="startTime"]', 'input[id*="start-time"]']:
+                    for time_sel in ['input[aria-label="Start time"]', 'input[aria-label="start time"]']:
                         if page.locator(time_sel).count() > 0:
-                            time_input = page.locator(time_sel).first
-                            time_input.click(force=True, timeout=3000)
+                            page.locator(time_sel).first.click(force=True, timeout=3000)
                             time.sleep(0.3)
                             page.keyboard.press("Control+a")
                             page.keyboard.type(start_time_str)
-                            page.keyboard.press("Tab")
+                            page.keyboard.press("Enter")
                             time.sleep(0.5)
-                            logger.info(f"[BotTrigger] Set time with selector: {time_sel}")
+                            logger.info(f"[BotTrigger] Set time: {start_time_str} using {time_sel}")
                             break
+                    else:
+                        logger.warning("[BotTrigger] Start time field not found")
                 except Exception as e:
                     logger.warning(f"[BotTrigger] Could not set start time: {e}")
 
@@ -366,8 +377,9 @@ class BotTrigger:
 
     def get_participants(self, meeting_id: str) -> list[str]:
         """
-        Fetch the live participant list for the recurring Zoom meeting.
-        Tries multiple endpoints since different account types support different APIs.
+        Fetch the participant list for the meeting.
+        Uses /users/{host}/meetings?type=live to find the active meeting instance,
+        then /meetings/{id}/participants to get attendees.
         """
         import requests
         zoom_cfg = config.zoom
@@ -375,70 +387,29 @@ class BotTrigger:
             token = self._get_zoom_token()
             headers = {"Authorization": f"Bearer {token}"}
 
-            # Endpoint 1: Dashboard API (works for meetings started via link)
-            resp = requests.get(
-                f"{zoom_cfg.api_base}/metrics/meetings/{meeting_id}/participants",
+            # List live meetings for the host to confirm the meeting is running
+            resp_list = requests.get(
+                f"{zoom_cfg.api_base}/users/{zoom_cfg.host_email}/meetings",
                 headers=headers,
                 params={"type": "live"},
                 timeout=15,
             )
-            if resp.ok:
-                data = resp.json()
-                names = [p.get("name", "") or p.get("user_name", "") 
-                         for p in data.get("participants", [])]
-                if names:
-                    logger.info(f"[BotTrigger] Dashboard API participants: {names}")
-                    return names
+            if resp_list.ok:
+                live = resp_list.json().get("meetings", [])
+                logger.info(f"[BotTrigger] Host live meetings: {[(m.get('id'), m.get('topic')) for m in live]}")
 
-            # Endpoint 2: Past meeting participants (catches recent joiners)
-            resp2 = requests.get(
-                f"{zoom_cfg.api_base}/past_meetings/{meeting_id}/participants",
-                headers=headers,
-                timeout=15,
-            )
-            if resp2.ok:
-                data2 = resp2.json()
-                names2 = [p.get("name", "") or p.get("user_name", "")
-                          for p in data2.get("participants", [])]
-                if names2:
-                    logger.info(f"[BotTrigger] Past meeting participants: {names2}")
-                    return names2
-
-            # Endpoint 3: Original endpoint (works for API-started meetings)
-            resp3 = requests.get(
+            # Try getting participants directly
+            resp = requests.get(
                 f"{zoom_cfg.api_base}/meetings/{meeting_id}/participants",
                 headers=headers,
                 timeout=15,
             )
-            if resp3.ok:
-                data3 = resp3.json()
-                names3 = [p.get("name", "") for p in data3.get("participants", [])]
-                logger.info(f"[BotTrigger] Standard participants: {names3}")
-                return names3
-
-            logger.warning(f"[BotTrigger] All participant endpoints failed. "
-                          f"Dashboard: {resp.status_code} {resp.text[:200]}, "
-                          f"Past: {resp2.status_code} {resp2.text[:200]}, "
-                          f"Standard: {resp3.status_code} {resp3.text[:200]}")
-
-            # Try listing all live meetings to find the active instance
-            try:
-                resp4 = requests.get(
-                    f"{zoom_cfg.api_base}/metrics/meetings",
-                    headers=headers,
-                    params={"type": "live"},
-                    timeout=15,
-                )
-                if resp4.ok:
-                    meetings = resp4.json().get("meetings", [])
-                    logger.info(f"[BotTrigger] Live meetings: {[m.get('id') for m in meetings]}")
-                    for m in meetings:
-                        if str(m.get("id")) == str(meeting_id) or str(m.get("uuid", "")) != "":
-                            logger.info(f"[BotTrigger] Found live meeting: {m}")
-                else:
-                    logger.warning(f"[BotTrigger] Live meetings list: {resp4.status_code} {resp4.text[:200]}")
-            except Exception as e:
-                logger.warning(f"[BotTrigger] Could not list live meetings: {e}")
+            logger.info(f"[BotTrigger] Participants response: {resp.status_code} {resp.text[:300]}")
+            if resp.ok:
+                names = [p.get("name", "") or p.get("user_name", "") 
+                         for p in resp.json().get("participants", [])]
+                logger.info(f"[BotTrigger] Participants: {names}")
+                return names
 
             return []
 
