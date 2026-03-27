@@ -26,3 +26,5 @@ jiwer==3.0.4          # Word Error Rate calculation (optional — we have our ow
 
 # Utilities
 python-dotenv==1.0.1  # Load .env files in local dev
+
+flask
