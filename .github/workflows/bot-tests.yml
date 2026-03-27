@@ -90,3 +90,6 @@ jobs:
             echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
             echo "| Zoom | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           fi
+
+- name: Install localtunnel
+  run: npm install -g localtunnel
