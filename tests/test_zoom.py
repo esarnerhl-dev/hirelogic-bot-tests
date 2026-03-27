@@ -1,84 +1,69 @@
 """
 tests/test_zoom.py
-Simplified Zoom bot join test.
-- Schedules a calendar invite 5 minutes from now
-- Waits until the meeting start time
-- Then polls for up to 5 minutes for the bot to join
-- Reports exactly how long it took
+
+Sends a calendar invite to the HireLogic bot and waits for it to join the Zoom
+meeting, detected via Zoom webhook (meeting.participant_joined event).
 """
 
-import time
-import pytest
 import logging
+import os
+import time
+
+import pytest
 
 from bot.trigger import BotTrigger
-from bot.observer import BotObserver
+from bot.webhook_listener import ZoomWebhookListener
 from config.settings import config
 
 logger = logging.getLogger(__name__)
 
+SLA_SECONDS = 300  # bot must join within 5 minutes of meeting start
+
 
 class TestZoomBotJoin:
-
     def test_bot_joins_within_sla(self):
-        """
-        Invite the HireLogic bot via Outlook calendar (5 min from now),
-        wait for the meeting to start, then verify the bot joins within 5 minutes.
-        """
-        bot_trigger = BotTrigger()
         meeting_id = config.zoom.recurring_meeting_id
-        zoom_url = config.zoom.recurring_meeting_url
-        max_wait = 300  # 5 minutes after meeting start
-        poll_interval = 10
+        bot_trigger = BotTrigger()
 
+        # Step 1: Send calendar invite
         logger.info(f"[Test] Sending calendar invite to bot for meeting {meeting_id}")
-
-        # Step 1: Create Outlook calendar invite (5 min from now)
         job = bot_trigger.send_bot()
-        invite_sent_at = time.time()
-        meeting_start_at = invite_sent_at + (5 * 60)  # 5 minutes from now
+        invited_at = job.invited_at
+        meeting_start = invited_at + 300  # event is set 5 min from now
 
-        logger.info(f"[Test] Invite sent. Meeting starts at t+5min. Waiting until then...")
+        logger.info(f"[Test] Invite sent at {time.strftime('%H:%M:%S', time.localtime(invited_at))}. "
+                    f"Meeting starts at {time.strftime('%H:%M:%S', time.localtime(meeting_start))}")
 
-        # Step 2: Wait until meeting start time
-        wait_until_start = meeting_start_at - time.time()
-        if wait_until_start > 0:
-            logger.info(f"[Test] Sleeping {wait_until_start:.0f}s until meeting start time...")
-            time.sleep(wait_until_start)
+        # Step 2: Set up webhook listener (starts tunnel + updates Zoom endpoint)
+        listener = ZoomWebhookListener(
+            zoom_account_id=config.zoom.account_id,
+            zoom_client_id=config.zoom.client_id,
+            zoom_client_secret=config.zoom.client_secret,
+            webhook_secret=os.environ["ZOOM_WEBHOOK_SECRET"],
+            meeting_id=meeting_id,
+        )
 
-        logger.info(f"[Test] Meeting start time reached. Now polling for bot to join (up to {max_wait}s)...")
+        # Step 3: Wait until meeting start time
+        now = time.time()
+        wait_secs = max(0, meeting_start - now)
+        logger.info(f"[Test] Sleeping {wait_secs:.0f}s until meeting start...")
+        time.sleep(wait_secs)
 
-        # Step 3: Poll Zoom participant list for up to 5 minutes
-        joined = False
-        elapsed_since_start = 0
-        attempt = 0
+        # Step 4: Wait for webhook event (bot join), up to SLA_SECONDS
+        logger.info(f"[Test] Meeting start time reached. Waiting up to {SLA_SECONDS}s for bot via webhook...")
+        result = listener.wait_for_bot(timeout=SLA_SECONDS, start_time=meeting_start)
 
-        while elapsed_since_start < max_wait:
-            attempt += 1
-            time.sleep(poll_interval)
-            elapsed_since_start = time.time() - meeting_start_at
-            elapsed_since_invite = time.time() - invite_sent_at
-
-            participants = bot_trigger.get_participants(meeting_id)
-            logger.info(f"[Test] t+{elapsed_since_start:.0f}s after start ({elapsed_since_invite:.0f}s after invite) — participants: {participants}")
-
-            for name in participants:
-                name_lower = name.lower()
-                if any(fragment in name_lower for fragment in ["hirelogic", "notetaker", "meeting assistant", "meeting notes"]):
-                    joined = True
-                    logger.info(f"[Test] ✅ Bot joined {elapsed_since_start:.1f}s after meeting start ({elapsed_since_invite:.1f}s after invite)! Name: '{name}'")
-                    break
-
-            if joined:
-                break
-
-        # Step 4: Report result
-        if joined:
-            print(f"\n✅ HireLogic Notetaker joined {elapsed_since_start:.1f}s after meeting start ({elapsed_since_invite:.1f}s after invite was sent)")
-            assert True
+        # Step 5: Assert
+        if result.detected:
+            secs = result.seconds_after_start or 0
+            logger.info(
+                f"[Test] ✅ PASS — Bot '{result.participant_name}' joined "
+                f"{secs:.1f}s after meeting start"
+            )
+            assert secs <= SLA_SECONDS, (
+                f"Bot joined {secs:.1f}s after start, exceeding SLA of {SLA_SECONDS}s"
+            )
         else:
-            print(f"\n❌ HireLogic Notetaker did NOT join within {max_wait}s of meeting start")
             pytest.fail(
-                f"Bot did not join within {max_wait}s of meeting start. "
-                f"Meeting ID: {meeting_id}, Zoom URL: {zoom_url}"
+                f"HireLogic bot did not join meeting {meeting_id} within {SLA_SECONDS}s of start time"
             )
