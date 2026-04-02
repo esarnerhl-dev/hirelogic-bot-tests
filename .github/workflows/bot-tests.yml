@@ -27,6 +27,7 @@ jobs:
       ZOOM_RECURRING_MEETING_ID: ${{ secrets.ZOOM_RECURRING_MEETING_ID }}
       OUTLOOK_EMAIL: ${{ secrets.OUTLOOK_EMAIL }}
       OUTLOOK_PASSWORD: ${{ secrets.OUTLOOK_PASSWORD }}
+      ZOOM_WEBHOOK_SECRET: ${{ secrets.ZOOM_WEBHOOK_SECRET }}
 
     steps:
       - name: Check out code
@@ -51,6 +52,9 @@ jobs:
         run: |
           pip install playwright
           playwright install chromium --with-deps
+
+      - name: Install localtunnel
+        run: npm install -g localtunnel
 
       - name: Run Zoom join test
         timeout-minutes: 20
@@ -90,6 +94,3 @@ jobs:
             echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
             echo "| Zoom | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           fi
-
-- name: Install localtunnel
-  run: npm install -g localtunnel
