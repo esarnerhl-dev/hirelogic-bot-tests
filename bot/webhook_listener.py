@@ -256,8 +256,10 @@ class ZoomWebhookListener:
                         continue
                     line = line.strip()
                     logger.debug(f"[Tunnel] stdout: {line}")
-                    if line.startswith("https://"):
-                        url = line
+                    # localtunnel prints: "your url is: https://xyz.loca.lt"
+                    # Extract the https:// URL wherever it appears in the line
+                    if "https://" in line:
+                        url = "https://" + line.split("https://")[-1].strip()
                         break
 
                 if url:
