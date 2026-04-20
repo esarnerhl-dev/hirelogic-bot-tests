@@ -28,6 +28,7 @@ jobs:
       OUTLOOK_EMAIL: ${{ secrets.OUTLOOK_EMAIL }}
       OUTLOOK_PASSWORD: ${{ secrets.OUTLOOK_PASSWORD }}
       ZOOM_WEBHOOK_SECRET: ${{ secrets.ZOOM_WEBHOOK_SECRET }}
+      ZOOM_WEBHOOK_PROXY_URL: ${{ secrets.ZOOM_WEBHOOK_PROXY_URL }}
 
     steps:
       - name: Check out code
@@ -53,8 +54,8 @@ jobs:
           pip install playwright
           playwright install chromium --with-deps
 
-      - name: Install localtunnel
-        run: npm install -g localtunnel
+      - name: Install smee-client
+        run: npm install -g smee-client
 
       - name: Run Zoom join test
         timeout-minutes: 20
