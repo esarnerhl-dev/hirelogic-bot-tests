@@ -80,7 +80,7 @@ class BotTrigger:
                             break
                     except Exception:
                         continue
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
                 time.sleep(2)
                 page.screenshot(path="/tmp/debug_02_after_email.png")
                 logger.info(f"[BotTrigger] Page URL after next: {page.url}")
@@ -99,7 +99,7 @@ class BotTrigger:
                             break
                     except Exception:
                         continue
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
                 time.sleep(2)
                 page.screenshot(path="/tmp/debug_04_after_password.png")
                 logger.info(f"[BotTrigger] Page URL after signin: {page.url}")
@@ -167,7 +167,7 @@ class BotTrigger:
                             break
                     except Exception:
                         continue
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
                 time.sleep(2)
                 page.screenshot(path="/tmp/debug_05_after_new_event.png")
                 logger.info(f"[BotTrigger] URL after new event click: {page.url}")
@@ -336,7 +336,7 @@ class BotTrigger:
                     except Exception:
                         continue
 
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
                 page.screenshot(path="/tmp/debug_09_after_save.png")
                 logger.info(f"[BotTrigger] URL after save: {page.url} (was: {url_before})")
 
