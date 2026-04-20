@@ -40,10 +40,10 @@ class TestZoomBotJoin:
 
         # Step 1: Start webhook listener FIRST so we don't miss early join events.
         # The context manager guarantees cleanup (tunnel teardown) on exit.
-      with ZoomWebhookListener(
-    webhook_secret=webhook_secret,
-    smee_url=os.environ["ZOOM_WEBHOOK_PROXY_URL"],
-) as listener:
+        with ZoomWebhookListener(
+            webhook_secret=webhook_secret,
+            smee_url=os.environ["ZOOM_WEBHOOK_PROXY_URL"],
+        ) as listener:
 
             logger.info(f"[Test] Webhook listener ready at {listener.webhook_url}")
 
