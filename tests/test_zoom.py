@@ -40,14 +40,10 @@ class TestZoomBotJoin:
 
         # Step 1: Start webhook listener FIRST so we don't miss early join events.
         # The context manager guarantees cleanup (tunnel teardown) on exit.
-        with ZoomWebhookListener(
-            zoom_account_id=config.zoom.account_id,
-            zoom_client_id=config.zoom.client_id,
-            zoom_client_secret=config.zoom.client_secret,
-            webhook_secret=webhook_secret,
-            meeting_id=meeting_id,
-            bot_email=config.hirelogic.bot_email,
-        ) as listener:
+      with ZoomWebhookListener(
+    webhook_secret=webhook_secret,
+    smee_url=os.environ["ZOOM_WEBHOOK_PROXY_URL"],
+) as listener:
 
             logger.info(f"[Test] Webhook listener ready at {listener.webhook_url}")
 
