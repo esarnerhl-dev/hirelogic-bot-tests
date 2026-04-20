@@ -37,15 +37,16 @@ class WebhookResult:
 
 
 class ZoomWebhookListener:
-    def __init__(self, zoom_account_id: str, zoom_client_id: str,
-                 zoom_client_secret: str, webhook_secret: str,
-                 meeting_id: str, port: int = 4040):
+  def __init__(self, zoom_account_id: str, zoom_client_id: str,
+             zoom_client_secret: str, webhook_secret: str,
+             meeting_id: str, bot_email: str = "", port: int = 4040):
         self.zoom_account_id = zoom_account_id
         self.zoom_client_id = zoom_client_id
         self.zoom_client_secret = zoom_client_secret
         self.webhook_secret = webhook_secret
         self.meeting_id = str(meeting_id)
         self.port = port
+        self.bot_email = bot_email
 
         self.app = Flask(__name__)
         self._result: Optional[WebhookResult] = None
